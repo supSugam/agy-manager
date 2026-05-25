@@ -71,6 +71,7 @@ type TokenInfo struct {
 	RefreshToken string
 	ExpiryMs     int64
 	Email        string
+	IsGcpTos     bool
 }
 
 func (t *TokenInfo) IsExpired() bool {
@@ -237,6 +238,37 @@ func getActiveAntigravityToken() (*TokenInfo, error) {
 
 	token := decodeInnerToken(decodedInner)
 
+	if authStateVal, ok := m["authStateWithContextSentinelKey"]; ok {
+		var innerStateData []byte
+		j2 := 0
+		tW2, n2 := decodeVarint(authStateVal[j2:])
+		j2 += n2
+		if tW2>>3 == 2 {
+			l2, n2 := decodeVarint(authStateVal[j2:])
+			j2 += n2
+			wrapperData := authStateVal[j2 : j2+int(l2)]
+			
+			j3 := 0
+			tW3, n3 := decodeVarint(wrapperData[j3:])
+			j3 += n3
+			if tW3>>3 == 1 {
+				l3, n3 := decodeVarint(wrapperData[j3:])
+				j3 += n3
+				innerStateData = wrapperData[j3 : j3+int(l3)]
+			}
+		}
+		if len(innerStateData) > 0 {
+			var stateObj struct {
+				Context struct {
+					IsGcpTos bool `json:"isGcpTos"`
+				} `json:"context"`
+			}
+			if err := json.Unmarshal(innerStateData, &stateObj); err == nil {
+				token.IsGcpTos = stateObj.Context.IsGcpTos
+			}
+		}
+	}
+
 	if authStatusStr != "" {
 		var status map[string]interface{}
 		if err := json.Unmarshal([]byte(authStatusStr), &status); err == nil {
@@ -277,6 +309,13 @@ func saveActiveAntigravityToken(token *TokenInfo) error {
 	var val []byte
 	val = appendString(val, 1, encodedInner)
 	m["oauthTokenInfoSentinelKey"] = val
+
+	var stateJSON string = fmt.Sprintf(`{"state":"signedIn","context":{"project":"","showProjectError":false,"errorMessage":"","ineligibleMessage":"","verificationUrl":"","isGcpTos":%t,"browserOpenFailed":false,"appealUrl":"","appealLinkText":""}}`, token.IsGcpTos)
+	var innerWrapper []byte
+	innerWrapper = appendString(innerWrapper, 1, stateJSON)
+	var outerVal []byte
+	outerVal = appendBytes(outerVal, 2, innerWrapper)
+	m["authStateWithContextSentinelKey"] = outerVal
 
 	newOauthStr := encodeAntigravityOauthMap(m)
 
@@ -344,11 +383,21 @@ func RefreshAntigravityToken(token *TokenInfo) error {
 		return fmt.Errorf("no refresh token available")
 	}
 
-	cfg, err := LoadConfigForCLI("antigravity")
-	if err != nil {
-		return err
+	var clientID, clientSecret string
+	if !token.IsGcpTos {
+		agyCfg, err := LoadConfigForCLI("agy")
+		if err == nil {
+			clientID, clientSecret = agyCfg.GetCredentials("agy")
+		}
 	}
-	clientID, clientSecret := cfg.GetCredentials("antigravity")
+
+	if clientID == "" || clientSecret == "" {
+		cfg, err := LoadConfigForCLI("antigravity")
+		if err != nil {
+			return err
+		}
+		clientID, clientSecret = cfg.GetCredentials("antigravity")
+	}
 
 	resp, err := http.PostForm("https://oauth2.googleapis.com/token", url.Values{
 		"client_id":     {clientID},

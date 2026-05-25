@@ -97,6 +97,33 @@ func DiscoverGeminiCredentials() (string, string) {
 	return "", ""
 }
 
+func DiscoverAntigravityCredentials() (string, string) {
+	var searchPaths []string
+
+	if path, err := exec.LookPath("antigravity"); err == nil {
+		realPath, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			dir := filepath.Dir(realPath)
+			searchPaths = append(searchPaths, filepath.Join(dir, "../resources/app/out/main.js"))
+			searchPaths = append(searchPaths, filepath.Join(dir, "resources/app/out/main.js"))
+		}
+	}
+
+	searchPaths = append(searchPaths, "/usr/share/antigravity/resources/app/out/main.js")
+
+	for _, p := range searchPaths {
+		if _, err := os.Stat(p); err == nil {
+			if d, err := os.ReadFile(p); err == nil {
+				id, secret := extractFromBuffer(d, "884354919052")
+				if validateCredentials(id, secret) {
+					return id, secret
+				}
+			}
+		}
+	}
+	return "", ""
+}
+
 func extractFromBuffer(data []byte, preferredPrefix string) (string, string) {
 	content := string(data)
 	
@@ -125,6 +152,11 @@ func extractFromBuffer(data []byte, preferredPrefix string) (string, string) {
 		// Heuristic: for 'agy', we know it currently starts with GOCSPX-K58F...
 		// If we're looking for agy and this matches, prioritize it.
 		if preferredPrefix == "1071006060591" && strings.HasPrefix(m, "GOCSPX-K58F") {
+			clientSecret = m
+			break
+		}
+		// Heuristic: for 'antigravity', we know it starts with GOCSPX-9YQW...
+		if preferredPrefix == "884354919052" && strings.HasPrefix(m, "GOCSPX-9YQW") {
 			clientSecret = m
 			break
 		}

@@ -27,9 +27,13 @@ const (
 	AgyDefaultClientID     = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
 	AgyDefaultClientSecret = "" // Discovered dynamically at runtime
 
-	// Default credentials for 'gemini' and 'antigravity'
+	// Default credentials for 'gemini'
 	GeminiDefaultClientID     = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
 	GeminiDefaultClientSecret = "" // Discovered dynamically at runtime
+
+	// Default credentials for 'antigravity'
+	AntigravityDefaultClientID     = "884354919052-36trc1jjb3tguiac32ov6cod268c5blh.apps.googleusercontent.com"
+	AntigravityDefaultClientSecret = "" // Discovered dynamically at runtime
 )
 
 func (c *Config) GetCredentials(cli string) (string, string) {
@@ -68,8 +72,10 @@ func (c *Config) GetCredentials(cli string) (string, string) {
 	switch cli {
 	case "agy":
 		discID, discSecret = DiscoverAgyCredentials()
-	case "gemini", "antigravity":
+	case "gemini":
 		discID, discSecret = DiscoverGeminiCredentials()
+	case "antigravity":
+		discID, discSecret = DiscoverAntigravityCredentials()
 	}
 
 	if discID != "" && discSecret != "" {
@@ -91,8 +97,10 @@ func (c *Config) GetCredentials(cli string) (string, string) {
 	switch cli {
 	case "agy":
 		return AgyDefaultClientID, AgyDefaultClientSecret
-	case "gemini", "antigravity":
+	case "gemini":
 		return GeminiDefaultClientID, GeminiDefaultClientSecret
+	case "antigravity":
+		return AntigravityDefaultClientID, AntigravityDefaultClientSecret
 	default:
 		return "", ""
 	}
