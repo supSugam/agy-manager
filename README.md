@@ -63,8 +63,11 @@ agy-manager --cli antigravity add dev-env
 agy-manager --cli antigravity use dev-env
 ```
 
+### Smart Credential Discovery
+`agy-manager` features an automatic discovery mechanism that extracts OAuth credentials directly from your installed `agy` and `gemini` tools. This ensures the manager remains functional even if Google updates the official Client IDs or Secrets, without requiring an app update.
+
 ### Custom OAuth Credentials
-If the official tools update their client IDs or you wish to use your own, you can override them via environment variables or the configuration file:
+If discovery fails or you wish to use your own, you can override them via environment variables or the configuration file:
 
 **Environment Variables:**
 - `AGY_CLIENT_ID` / `AGY_CLIENT_SECRET`

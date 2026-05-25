@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -18,43 +15,22 @@ type Account struct {
 }
 
 type Config struct {
-	Accounts     []Account `json:"accounts"`
-	ClientID     string    `json:"client_id,omitempty"`
-	ClientSecret string    `json:"client_secret,omitempty"`
+	Accounts               []Account `json:"accounts"`
+	ClientID               string    `json:"client_id,omitempty"`
+	ClientSecret           string    `json:"client_secret,omitempty"`
+	DiscoveredClientID     string    `json:"discovered_client_id,omitempty"`
+	DiscoveredClientSecret string    `json:"discovered_client_secret,omitempty"`
 }
 
-type RemoteCreds struct {
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-}
+const (
+	// Default credentials for 'agy'
+	AgyDefaultClientID     = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+	AgyDefaultClientSecret = "" // Discovered dynamically at runtime
 
-// Default remote URL to retrieve credentials if not overridden by AGY_MANAGER_CREDS_URL
-const DefaultCredsURL = "https://raw.githubusercontent.com/supSugam/agy-manager-secrets/main/credentials.json"
-
-func fetchFromURL(credsURL string, cli string) (string, string, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(credsURL)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("failed to fetch credentials: status %d", resp.StatusCode)
-	}
-
-	var data map[string]RemoteCreds
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return "", "", err
-	}
-
-	creds, ok := data[cli]
-	if !ok {
-		return "", "", fmt.Errorf("no credentials found for CLI %s in remote file", cli)
-	}
-
-	return creds.ClientID, creds.ClientSecret, nil
-}
+	// Default credentials for 'gemini' and 'antigravity'
+	GeminiDefaultClientID     = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+	GeminiDefaultClientSecret = "" // Discovered dynamically at runtime
+)
 
 func (c *Config) GetCredentials(cli string) (string, string) {
 	id := c.ClientID
@@ -87,56 +63,39 @@ func (c *Config) GetCredentials(cli string) (string, string) {
 		return id, secret
 	}
 
-	// 3. Dynamically retrieve credentials
-	fmt.Printf("\n[agy-manager] Retrieving Google OAuth Client ID & Secret for '%s'...\n", cli)
-
-	// Try fetching from remote URL
-	credsURL := os.Getenv("AGY_MANAGER_CREDS_URL")
-	if credsURL == "" {
-		credsURL = DefaultCredsURL
+	// 3. Try Dynamic Discovery
+	discID, discSecret := "", ""
+	switch cli {
+	case "agy":
+		discID, discSecret = DiscoverAgyCredentials()
+	case "gemini", "antigravity":
+		discID, discSecret = DiscoverGeminiCredentials()
 	}
 
-	fetchedID, fetchedSecret, err := fetchFromURL(credsURL, cli)
-	if err == nil && fetchedID != "" && fetchedSecret != "" {
-		id = fetchedID
-		secret = fetchedSecret
-		fmt.Printf("[agy-manager] Successfully retrieved credentials from remote source.\n")
-	} else {
-		if err != nil {
-			fmt.Printf("[agy-manager] Remote retrieval failed: %v\n", err)
+	if discID != "" && discSecret != "" {
+		// Update cache if changed
+		if discID != c.DiscoveredClientID || discSecret != c.DiscoveredClientSecret {
+			c.DiscoveredClientID = discID
+			c.DiscoveredClientSecret = discSecret
+			_ = SaveConfigForCLI(cli, c)
 		}
-		fmt.Println("Please manually enter the Google OAuth credentials for this CLI tool.")
-		fmt.Println("These will be saved securely to your local configuration on this machine.")
-
-		reader := bufio.NewReader(os.Stdin)
-
-		fmt.Printf("Enter Google OAuth Client ID for '%s': ", cli)
-		inputID, readErr := reader.ReadString('\n')
-		if readErr == nil {
-			id = strings.TrimSpace(inputID)
-		}
-
-		fmt.Printf("Enter Google OAuth Client Secret for '%s': ", cli)
-		inputSecret, readErr := reader.ReadString('\n')
-		if readErr == nil {
-			secret = strings.TrimSpace(inputSecret)
-		}
+		return discID, discSecret
 	}
 
-	// 4. Save to config if successfully retrieved
-	if id != "" && secret != "" {
-		c.ClientID = id
-		c.ClientSecret = secret
-		err := SaveConfigForCLI(cli, c)
-		if err != nil {
-			fmt.Printf("[agy-manager] Warning: failed to save credentials to local config: %v\n", err)
-		} else {
-			fmt.Printf("[agy-manager] Saved credentials to local config: %s\n", cli)
-		}
-		return id, secret
+	// 4. Fallback to Cached Discovery
+	if c.DiscoveredClientID != "" && c.DiscoveredClientSecret != "" {
+		return c.DiscoveredClientID, c.DiscoveredClientSecret
 	}
 
-	return "", ""
+	// 5. Fallback to hardcoded defaults
+	switch cli {
+	case "agy":
+		return AgyDefaultClientID, AgyDefaultClientSecret
+	case "gemini", "antigravity":
+		return GeminiDefaultClientID, GeminiDefaultClientSecret
+	default:
+		return "", ""
+	}
 }
 
 func getConfigPath() (string, error) {
